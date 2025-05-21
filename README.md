@@ -130,32 +130,45 @@ The application can be deployed to a Kubernetes cluster with a GCP Load Balancer
 
 For detailed Kubernetes deployment instructions, see [kubernetes/README.md](kubernetes/README.md).
 
-### CI/CD Pipeline with GitHub Actions
+### CI/CD Strategy
 
-This project includes a CI/CD pipeline implemented with GitHub Actions. The pipeline automates the following tasks:
+This project implements a modern CI/CD strategy that separates concerns:
+
+#### CI with GitHub Actions
+
+The Continuous Integration pipeline is implemented with GitHub Actions and automates the following tasks:
 
 1. **Lint**: Validates the Dockerfile using Hadolint
 2. **Build and Push**: Builds and pushes the Docker image to DockerHub
    - Creates multi-platform images (linux/amd64, linux/arm64)
    - Uses BuildKit cache for faster builds
 3. **Security Scan**: Scans the Docker image for vulnerabilities using Trivy
-4. **Deploy to Kubernetes**: Deploys the application to the Kubernetes cluster
+4. **Notification**: Creates a notification with the new image tag for ArgoCD
 
-#### Required Secrets
+##### Required Secrets for CI
 
-To use the CI/CD pipeline, you need to set up the following secrets in your GitHub repository:
+To use the CI pipeline, you need to set up the following secrets in your GitHub repository:
 
 - `DOCKERHUB_USERNAME`: Your DockerHub username
 - `DOCKERHUB_TOKEN`: Your DockerHub access token
-- `KUBE_CONFIG`: Your Kubernetes config file content (base64 encoded)
-- `KUBE_CONTEXT`: Your Kubernetes context name
 
-#### Workflow Triggers
+##### Workflow Triggers
 
 The pipeline is triggered on:
 - Push to the `main` branch
 - Pull requests to the `main` branch
 - Manual trigger via GitHub Actions UI
+
+#### CD with ArgoCD
+
+The Continuous Deployment is managed by ArgoCD in the Kubernetes cluster, following the GitOps approach:
+
+1. ArgoCD monitors the Git repository for changes
+2. When a new image is built by the CI pipeline, ArgoCD detects the change
+3. ArgoCD automatically syncs the application state with the desired state defined in Git
+4. The deployment is updated with zero downtime
+
+This separation of CI and CD follows the Windsurf principle of "Maintain Your Balance" by clearly defining responsibilities and using specialized tools for each part of the process.
 
 ## License
 

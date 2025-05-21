@@ -558,19 +558,25 @@ To stop and remove the container, and then remove the image:
    kubectl logs -n hello-world -l app=hello-world
    ```
 
-## 11. CI/CD Pipeline Implementation with GitHub Actions
+## 11. CI/CD Implementation
 
-### 11.1. Create GitHub Actions Workflow
+This project implements a modern CI/CD strategy that separates concerns:
+- CI (Continuous Integration) with GitHub Actions
+- CD (Continuous Deployment) with ArgoCD
+
+### 11.1. CI Implementation with GitHub Actions
+
+#### 11.1.1. Create GitHub Actions Workflow
 
 1. **Create workflow directory:**
    ```bash
    mkdir -p .github/workflows
    ```
 
-2. **Create CI/CD workflow file:**
+2. **Create CI workflow file:**
    Create a file named `ci-cd.yml` inside the `.github/workflows` directory with the following content:
    ```yaml
-   name: CI/CD Pipeline
+   name: CI Pipeline
 
    on:
      push:
@@ -581,7 +587,6 @@ To stop and remove the container, and then remove the image:
 
    env:
      DOCKER_IMAGE: josenetoalest/hello-world
-     KUBERNETES_NAMESPACE: hello-world
 
    jobs:
      lint:
@@ -662,8 +667,8 @@ To stop and remove the container, and then remove the image:
            with:
              sarif_file: 'trivy-results.sarif'
 
-     deploy-to-kubernetes:
-       name: Deploy to Kubernetes
+     notify-argocd:
+       name: Notify ArgoCD
        runs-on: ubuntu-latest
        needs: [build-and-push, security-scan]
        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -671,60 +676,125 @@ To stop and remove the container, and then remove the image:
          - name: Checkout code
            uses: actions/checkout@v4
 
-         - name: Set up kubectl
-           uses: azure/setup-kubectl@v3
-           with:
-             version: 'latest'
+         - name: Get image tag
+           id: get-tag
+           run: echo "IMAGE_TAG=sha-$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
 
-         - name: Set up kubeconfig
-           uses: azure/k8s-set-context@v3
+         - name: Post notification
+           uses: actions/github-script@v6
            with:
-             method: kubeconfig
-             kubeconfig: ${{ secrets.KUBE_CONFIG }}
-             context: ${{ secrets.KUBE_CONTEXT }}
-
-         # Update image tag in deployment.yaml
-         - name: Update Kubernetes manifests
-           run: |
-             sed -i "s|image: ${{ env.DOCKER_IMAGE }}:.*|image: ${{ env.DOCKER_IMAGE }}:sha-$(echo ${{ github.sha }} | cut -c1-7)|g" kubernetes/deployment.yaml
-             
-         # Apply Kubernetes manifests
-         - name: Deploy to Kubernetes
-           run: |
-             kubectl apply -f kubernetes/namespace.yaml
-             kubectl apply -f kubernetes/configmap.yaml
-             kubectl apply -f kubernetes/deployment.yaml
-             kubectl apply -f kubernetes/service.yaml
-             kubectl apply -f kubernetes/hpa.yaml
-             
-         # Verify deployment
-         - name: Verify deployment
-           run: |
-             kubectl -n ${{ env.KUBERNETES_NAMESPACE }} rollout status deployment/hello-world --timeout=180s
+             script: |
+               const imageTag = '${{ steps.get-tag.outputs.IMAGE_TAG }}';
+               const message = `✅ CI completed successfully! New image available: \`${{ env.DOCKER_IMAGE }}:${imageTag}\`\n\nArgoCD should detect this new image and update the deployment automatically.`;
+               
+               if (context.eventName === 'pull_request') {
+                 github.rest.issues.createComment({
+                   issue_number: context.issue.number,
+                   owner: context.repo.owner,
+                   repo: context.repo.repo,
+                   body: message
+                 });
+               } else {
+                 github.rest.repos.createCommitComment({
+                   owner: context.repo.owner,
+                   repo: context.repo.repo,
+                   commit_sha: context.sha,
+                   body: message
+                 });
+               }
    ```
 
-### 11.2. Configure GitHub Repository Secrets
+#### 11.1.2. Configure GitHub Repository Secrets
 
-To use the CI/CD pipeline, you need to set up the following secrets in your GitHub repository:
+To use the CI pipeline, you need to set up the following secrets in your GitHub repository:
 
 1. **DOCKERHUB_USERNAME**: Your DockerHub username
 2. **DOCKERHUB_TOKEN**: Your DockerHub access token
-3. **KUBE_CONFIG**: Your Kubernetes config file content (base64 encoded)
-4. **KUBE_CONTEXT**: Your Kubernetes context name
 
-### 11.3. Commit and Push the Workflow File
+#### 11.1.3. Commit and Push the Workflow File
 
 ```bash
 git add .github/workflows/ci-cd.yml
-git commit -m "feat: Add CI/CD pipeline with GitHub Actions"
+git commit -m "feat: Add CI pipeline with GitHub Actions"
 git push origin main
 ```
 
-### 11.4. Verify Pipeline Execution
+#### 11.1.4. Verify Pipeline Execution
 
 1. Go to your GitHub repository
 2. Click on the "Actions" tab
 3. You should see the workflow running after your push
 4. Verify that all steps complete successfully
+
+### 11.2. CD Implementation with ArgoCD
+
+#### 11.2.1. Install ArgoCD in Kubernetes Cluster
+
+1. **Create ArgoCD namespace:**
+   ```bash
+   kubectl create namespace argocd
+   ```
+
+2. **Install ArgoCD:**
+   ```bash
+   kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+   ```
+
+3. **Access ArgoCD UI:**
+   ```bash
+   kubectl port-forward svc/argocd-server -n argocd 8080:443
+   ```
+   Then access ArgoCD UI at https://localhost:8080
+
+#### 11.2.2. Configure ArgoCD Application
+
+1. **Create ArgoCD Application manifest:**
+   Create a file named `argocd-app.yaml` with the following content:
+   ```yaml
+   apiVersion: argoproj.io/v1alpha1
+   kind: Application
+   metadata:
+     name: hello-world
+     namespace: argocd
+   spec:
+     project: default
+     source:
+       repoURL: https://github.com/josenetoo/demo-hello-world-app.git
+       targetRevision: HEAD
+       path: kubernetes
+     destination:
+       server: https://kubernetes.default.svc
+       namespace: hello-world
+     syncPolicy:
+       automated:
+         prune: true
+         selfHeal: true
+       syncOptions:
+       - CreateNamespace=true
+   ```
+
+2. **Apply the ArgoCD Application:**
+   ```bash
+   kubectl apply -f argocd-app.yaml
+   ```
+
+#### 11.2.3. Configure Image Updater (Optional)
+
+For automatic image updates, you can configure ArgoCD Image Updater:
+
+1. **Install ArgoCD Image Updater:**
+   ```bash
+   kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/stable/manifests/install.yaml
+   ```
+
+2. **Configure Image Updater for your application:**
+   Add annotations to your ArgoCD Application:
+   ```yaml
+   metadata:
+     annotations:
+       argocd-image-updater.argoproj.io/image-list: josenetoalest/hello-world
+       argocd-image-updater.argoproj.io/josenetoalest/hello-world.update-strategy: digest
+       argocd-image-updater.argoproj.io/josenetoalest/hello-world.allow-tags: sha-*
+   ```
 
 This concludes the tasks required to execute the project.
