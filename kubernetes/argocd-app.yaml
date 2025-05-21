@@ -5,9 +5,9 @@ metadata:
   namespace: argocd
   annotations:
     # Image updater annotations
-    argocd-image-updater.argoproj.io/image-list: josenetoalest/hello-world
-    argocd-image-updater.argoproj.io/josenetoalest/hello-world.update-strategy: digest
-    argocd-image-updater.argoproj.io/josenetoalest/hello-world.allow-tags: sha-*
+    argocd-image-updater.argoproj.io/image-list: josenetoalest-hello-world=josenetoalest/hello-world
+    argocd-image-updater.argoproj.io/josenetoalest-hello-world.update-strategy: digest
+    argocd-image-updater.argoproj.io/josenetoalest-hello-world.allow-tags: sha-*
 spec:
   project: default
   source:
