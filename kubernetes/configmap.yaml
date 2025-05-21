@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hello-world-config
+  namespace: hello-world
+data:
+  GREETING_TEXT: "Hello from Kubernetes!"
+  GREETING_COLOR: "#0066cc"
+  BG_COLOR: "#f8f9fa"

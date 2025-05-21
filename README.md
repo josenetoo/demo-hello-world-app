@@ -4,7 +4,7 @@ A simple, Docker-based "hello-world" application that follows Windsurf principle
 
 ## Overview
 
-This project demonstrates a basic containerized web application setup with clear documentation, following best practices. The application serves a "Hello, World!" message through Nginx running in a Docker container.
+This project demonstrates a basic containerized web application setup with clear documentation, following best practices. The application serves a "Hello, World!" message through Nginx running in a Docker container. The application now supports dynamic configuration through environment variables and implements multi-stage builds with security enhancements. The project also includes Kubernetes manifests for deploying to a GCP Kubernetes cluster with a Load Balancer.
 
 ## Features
 
@@ -12,6 +12,10 @@ This project demonstrates a basic containerized web application setup with clear
 - Containerized using Docker with Nginx
 - Follows Windsurf principles for Docker applications
 - Accessible via web browser at `http://localhost:8080`
+- Dynamic configuration via environment variables
+- Multi-stage build for optimized image size
+- Container health monitoring
+- Enhanced security with non-root user
 
 ## Windsurf Principles Applied
 
@@ -28,11 +32,15 @@ This project demonstrates a basic containerized web application setup with clear
 
 4. **Be Agile & Responsive (Stateless & Configurable Containers)**
    - Stateless container design
-   - Simple configuration
+   - Dynamic configuration through environment variables
+   - Customizable greeting message, colors, and background
 
 5. **Secure Your Gear (Container Security Best Practices)**
    - Proper permissions management
    - Minimal port exposure
+   - Non-root user execution
+   - Container health monitoring
+   - Reduced permissions (755 instead of 777)
 
 ## Getting Started
 
@@ -47,13 +55,27 @@ This project demonstrates a basic containerized web application setup with clear
    docker build -t hello-world-app:latest .
    ```
 
-2. Run the Docker container:
+2. Run the Docker container with default settings:
    ```bash
    docker run -d -p 8080:80 --name my-hello-container hello-world-app:latest
    ```
 
+   Or customize with environment variables:
+   ```bash
+   docker run -d -p 8080:80 \
+     -e GREETING_TEXT="Olá, Mundo!" \
+     -e GREETING_COLOR="#0066cc" \
+     -e BG_COLOR="#f5f5f5" \
+     --name my-hello-container hello-world-app:latest
+   ```
+
 3. Access the application:
    Open your web browser and navigate to `http://localhost:8080`
+
+4. Check container health status:
+   ```bash
+   docker inspect --format='{{.State.Health.Status}}' my-hello-container
+   ```
 
 ### Stopping the Application
 
@@ -67,12 +89,46 @@ docker rm my-hello-container
 ```
 hello-world-app/
 ├── app/
-│   └── index.html         # Simple HTML page with "Hello, World!" message
-├── Dockerfile             # Docker configuration file
+│   ├── index.html         # Template HTML page (generated dynamically)
+│   └── entrypoint.sh      # Script for dynamic configuration
+├── kubernetes/            # Kubernetes deployment manifests
+│   ├── namespace.yaml     # Namespace definition
+│   ├── configmap.yaml     # Application configuration
+│   ├── deployment.yaml    # Pod deployment configuration
+│   ├── service.yaml       # LoadBalancer service
+│   ├── hpa.yaml           # Horizontal Pod Autoscaler
+│   ├── deploy.sh          # Deployment script
+│   └── README.md          # Kubernetes-specific documentation
+├── Dockerfile             # Docker configuration file with multi-stage build
+├── .dockerignore          # Files to exclude from Docker build context
 ├── PLANNING.MD            # Project planning documentation
 ├── TASKS.MD               # Detailed implementation tasks
 └── README.md              # This file
 ```
+
+## Deployment Options
+
+### Local Docker Deployment
+
+See the [Getting Started](#getting-started) section for running locally with Docker.
+
+### Kubernetes Deployment
+
+The application can be deployed to a Kubernetes cluster with a GCP Load Balancer:
+
+1. Push the Docker image to DockerHub:
+   ```bash
+   docker tag hello-world-app:latest josenetoalest/hello-world:v1.1
+   docker push josenetoalest/hello-world:v1.1
+   ```
+
+2. Deploy to Kubernetes:
+   ```bash
+   cd kubernetes
+   ./deploy.sh
+   ```
+
+For detailed Kubernetes deployment instructions, see [kubernetes/README.md](kubernetes/README.md).
 
 ## License
 
