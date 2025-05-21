@@ -558,4 +558,173 @@ To stop and remove the container, and then remove the image:
    kubectl logs -n hello-world -l app=hello-world
    ```
 
+## 11. CI/CD Pipeline Implementation with GitHub Actions
+
+### 11.1. Create GitHub Actions Workflow
+
+1. **Create workflow directory:**
+   ```bash
+   mkdir -p .github/workflows
+   ```
+
+2. **Create CI/CD workflow file:**
+   Create a file named `ci-cd.yml` inside the `.github/workflows` directory with the following content:
+   ```yaml
+   name: CI/CD Pipeline
+
+   on:
+     push:
+       branches: [ main ]
+     pull_request:
+       branches: [ main ]
+     workflow_dispatch:  # Allow manual triggering
+
+   env:
+     DOCKER_IMAGE: josenetoalest/hello-world
+     KUBERNETES_NAMESPACE: hello-world
+
+   jobs:
+     lint:
+       name: Lint Dockerfile
+       runs-on: ubuntu-latest
+       steps:
+         - name: Checkout code
+           uses: actions/checkout@v4
+
+         - name: Lint Dockerfile
+           uses: hadolint/hadolint-action@v3.1.0
+           with:
+             dockerfile: Dockerfile
+             failure-threshold: error
+
+     build-and-push:
+       name: Build and Push Docker Image
+       runs-on: ubuntu-latest
+       needs: lint
+       steps:
+         - name: Checkout code
+           uses: actions/checkout@v4
+
+         - name: Set up Docker Buildx
+           uses: docker/setup-buildx-action@v3
+
+         - name: Login to DockerHub
+           uses: docker/login-action@v3
+           with:
+             username: ${{ secrets.DOCKERHUB_USERNAME }}
+             password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+         - name: Extract metadata for Docker
+           id: meta
+           uses: docker/metadata-action@v5
+           with:
+             images: ${{ env.DOCKER_IMAGE }}
+             tags: |
+               type=semver,pattern={{version}}
+               type=semver,pattern={{major}}.{{minor}}
+               type=ref,event=branch
+               type=ref,event=pr
+               type=sha,format=short
+               type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+         # Build and push Docker image with Buildx (multi-platform)
+         - name: Build and push
+           uses: docker/build-push-action@v5
+           with:
+             context: .
+             platforms: linux/amd64,linux/arm64
+             push: ${{ github.event_name != 'pull_request' }}
+             tags: ${{ steps.meta.outputs.tags }}
+             labels: ${{ steps.meta.outputs.labels }}
+             cache-from: type=registry,ref=${{ env.DOCKER_IMAGE }}:buildcache
+             cache-to: type=registry,ref=${{ env.DOCKER_IMAGE }}:buildcache,mode=max
+
+     security-scan:
+       name: Security Scan
+       runs-on: ubuntu-latest
+       needs: build-and-push
+       if: github.event_name != 'pull_request'
+       steps:
+         - name: Checkout code
+           uses: actions/checkout@v4
+
+         - name: Run Trivy vulnerability scanner
+           uses: aquasecurity/trivy-action@master
+           with:
+             image-ref: ${{ env.DOCKER_IMAGE }}:sha-${{ github.sha }}
+             format: 'sarif'
+             output: 'trivy-results.sarif'
+             severity: 'CRITICAL,HIGH'
+
+         - name: Upload Trivy scan results to GitHub Security tab
+           uses: github/codeql-action/upload-sarif@v2
+           if: always()
+           with:
+             sarif_file: 'trivy-results.sarif'
+
+     deploy-to-kubernetes:
+       name: Deploy to Kubernetes
+       runs-on: ubuntu-latest
+       needs: [build-and-push, security-scan]
+       if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+       steps:
+         - name: Checkout code
+           uses: actions/checkout@v4
+
+         - name: Set up kubectl
+           uses: azure/setup-kubectl@v3
+           with:
+             version: 'latest'
+
+         - name: Set up kubeconfig
+           uses: azure/k8s-set-context@v3
+           with:
+             method: kubeconfig
+             kubeconfig: ${{ secrets.KUBE_CONFIG }}
+             context: ${{ secrets.KUBE_CONTEXT }}
+
+         # Update image tag in deployment.yaml
+         - name: Update Kubernetes manifests
+           run: |
+             sed -i "s|image: ${{ env.DOCKER_IMAGE }}:.*|image: ${{ env.DOCKER_IMAGE }}:sha-$(echo ${{ github.sha }} | cut -c1-7)|g" kubernetes/deployment.yaml
+             
+         # Apply Kubernetes manifests
+         - name: Deploy to Kubernetes
+           run: |
+             kubectl apply -f kubernetes/namespace.yaml
+             kubectl apply -f kubernetes/configmap.yaml
+             kubectl apply -f kubernetes/deployment.yaml
+             kubectl apply -f kubernetes/service.yaml
+             kubectl apply -f kubernetes/hpa.yaml
+             
+         # Verify deployment
+         - name: Verify deployment
+           run: |
+             kubectl -n ${{ env.KUBERNETES_NAMESPACE }} rollout status deployment/hello-world --timeout=180s
+   ```
+
+### 11.2. Configure GitHub Repository Secrets
+
+To use the CI/CD pipeline, you need to set up the following secrets in your GitHub repository:
+
+1. **DOCKERHUB_USERNAME**: Your DockerHub username
+2. **DOCKERHUB_TOKEN**: Your DockerHub access token
+3. **KUBE_CONFIG**: Your Kubernetes config file content (base64 encoded)
+4. **KUBE_CONTEXT**: Your Kubernetes context name
+
+### 11.3. Commit and Push the Workflow File
+
+```bash
+git add .github/workflows/ci-cd.yml
+git commit -m "feat: Add CI/CD pipeline with GitHub Actions"
+git push origin main
+```
+
+### 11.4. Verify Pipeline Execution
+
+1. Go to your GitHub repository
+2. Click on the "Actions" tab
+3. You should see the workflow running after your push
+4. Verify that all steps complete successfully
+
 This concludes the tasks required to execute the project.

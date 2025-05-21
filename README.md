@@ -130,6 +130,33 @@ The application can be deployed to a Kubernetes cluster with a GCP Load Balancer
 
 For detailed Kubernetes deployment instructions, see [kubernetes/README.md](kubernetes/README.md).
 
+### CI/CD Pipeline with GitHub Actions
+
+This project includes a CI/CD pipeline implemented with GitHub Actions. The pipeline automates the following tasks:
+
+1. **Lint**: Validates the Dockerfile using Hadolint
+2. **Build and Push**: Builds and pushes the Docker image to DockerHub
+   - Creates multi-platform images (linux/amd64, linux/arm64)
+   - Uses BuildKit cache for faster builds
+3. **Security Scan**: Scans the Docker image for vulnerabilities using Trivy
+4. **Deploy to Kubernetes**: Deploys the application to the Kubernetes cluster
+
+#### Required Secrets
+
+To use the CI/CD pipeline, you need to set up the following secrets in your GitHub repository:
+
+- `DOCKERHUB_USERNAME`: Your DockerHub username
+- `DOCKERHUB_TOKEN`: Your DockerHub access token
+- `KUBE_CONFIG`: Your Kubernetes config file content (base64 encoded)
+- `KUBE_CONTEXT`: Your Kubernetes context name
+
+#### Workflow Triggers
+
+The pipeline is triggered on:
+- Push to the `main` branch
+- Pull requests to the `main` branch
+- Manual trigger via GitHub Actions UI
+
 ## License
 
 This project is open source and available under the [MIT License](https://opensource.org/licenses/MIT).
